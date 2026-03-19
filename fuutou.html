@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>ドラフト抽選システム - Official</title>
+    <style>
+        body { background: #1a1a1a; color: white; font-family: "Helvetica Neue", Arial, sans-serif; text-align: center; margin: 0; padding: 20px; }
+        h1 { font-weight: 100; letter-spacing: 5px; color: #aaa; margin-bottom: 20px; }
+        
+        /* 抽選メインエリア */
+        .lottery-board { display: flex; justify-content: center; gap: 30px; margin: 30px 0; min-height: 400px; }
+        .slot { width: 140px; display: flex; flex-direction: column; align-items: center; }
+
+        /* 封筒デザイン */
+        .envelope {
+            position: relative; width: 120px; height: 180px; overflow: hidden;
+            background: linear-gradient(145deg, #e6e6e6, #ffffff);
+            border-radius: 2px; box-shadow: 0 10px 20px rgba(0,0,0,0.5); border: 1px solid #999;
+        }
+        .paper {
+            position: absolute; width: 100px; height: 150px; left: 10px; bottom: -160px;
+            background: white; border: 1px solid #ccc; transition: bottom 2.2s cubic-bezier(0.22, 1, 0.36, 1);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .reveal .paper { bottom: 15px; }
+
+        /* ロゴスロット（封筒の下） */
+        .drop-zone {
+            margin-top: 20px; width: 110px; height: 110px;
+            border: 2px dashed #444; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(255,255,255,0.02); transition: 0.3s;
+        }
+        .drop-zone.active { border-color: #b3894b; background: rgba(179,137,75,0.1); }
+
+        /* チームロゴ本体 */
+        .team-logo {
+            width: 100px; height: 100px; border-radius: 50%;
+            background: #333; cursor: grab; display: flex;
+            align-items: center; justify-content: center;
+            font-weight: bold; font-size: 14px; border: 2px solid #666;
+            overflow: hidden; user-select: none; transition: transform 0.2s;
+        }
+        .team-logo img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+        .team-logo:active { cursor: grabbing; transform: scale(1.05); }
+
+        /* 待機エリア（ベンチ） */
+        .bench {
+            background: #222; padding: 15px; border-radius: 8px;
+            display: flex; justify-content: center; gap: 15px;
+            min-height: 110px; border: 1px solid #333; margin-top: 20px;
+        }
+
+        /* 設定パネル */
+        .controls { background: #2a2a2a; padding: 20px; border-radius: 5px; margin-bottom: 20px; border: 1px solid #444; }
+        .team-select { margin-bottom: 15px; }
+        .team-select label { margin: 0 15px; cursor: pointer; font-size: 15px; }
+        
+        button {
+            padding: 12px 35px; font-size: 16px; background: #b3894b; color: white; border: none; 
+            cursor: pointer; margin: 0 10px; border-radius: 3px; transition: 0.3s; letter-spacing: 1px;
+        }
+        button:hover:not(:disabled) { background: #d4a76a; }
+        button:disabled { background: #444; color: #888; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <h1>DRAFT SELECTION SYSTEM</h1>
+    
+    <div class="controls">
+        <div class="team-select">
+            <span>参加チーム: </span>
+            <label><input type="checkbox" class="t-check" value="TeamA" checked> チームA</label>
+            <label><input type="checkbox" class="t-check" value="TeamB" checked> チームB</label>
+            <label><input type="checkbox" class="t-check" value="TeamC" checked> チームC</label>
+            <label><input type="checkbox" class="t-check" value="TeamD" checked> チームD</label>
+        </div>
+        <button onclick="initTable()">セットアップ</button>
+        <button id="startBtn" onclick="openEnvelopes()" style="display:none;">運命の開封</button>
+    </div>
+
+    <div class="lottery-board" id="board"></div>
+
+    <div class="bench" id="bench" ondragover="event.preventDefault()" ondrop="dropToBench(event)"></div>
+
+    <script>
+        let draggedElement = null;
+
+        // 画像データの定義
+        const teamConfigs = {
+            'TeamA': { name: 'A', img: 'H1.png' },
+            'TeamB': { name: 'B', img: 'H2.png' },
+            'TeamC': { name: 'C', img: 'u.jpg' },
+            'TeamD': { name: 'D', img: 'w.jpg' }
+        };
+
+        function initTable() {
+            const selectedKeys = Array.from(document.querySelectorAll('.t-check:checked')).map(el => el.value);
+            if(selectedKeys.length < 2) return alert("2チーム以上選択してください");
+
+            const board = document.getElementById('board');
+            const bench = document.getElementById('bench');
+            board.innerHTML = '';
+            bench.innerHTML = '';
+            document.getElementById('startBtn').style.display = "inline-block";
+            document.getElementById('startBtn').disabled = false;
+
+            // 当たりをランダムに決定
+            const winIdx = Math.floor(Math.random() * selectedKeys.length);
+
+            selectedKeys.forEach((key, i) => {
+                const config = teamConfigs[key];
+                const isWin = (i === winIdx);
+                
+                const slot = document.createElement('div');
+                slot.className = 'slot';
+                
+                // ロゴ要素の作成
+                const logo = document.createElement('div');
+                logo.className = 'team-logo';
+                logo.draggable = true;
+                logo.id = `logo-${key}`;
+                logo.innerHTML = `
+                    <img src="${config.img}" onerror="this.style.display='none'; this.nextSibling.style.display='block'">
+                    <span style="display:none">チーム${config.name}</span>
+                `;
+                logo.addEventListener('dragstart', (e) => { draggedElement = e.target; });
+
+                // スロット構造の組み立て
+                slot.innerHTML = `
+                    <div class="envelope">
+                        <div class="paper">
+                            <b style="color:${isWin?'red':'#333'}; font-size:18px;">${isWin?'交渉権獲得':'×'}</b>
+                        </div>
+                    </div>
+                    <div class="drop-zone" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="dropToZone(event)"></div>
+                `;
+                
+                // 最初からスロットにロゴを入れる
+                slot.querySelector('.drop-zone').appendChild(logo);
+                board.appendChild(slot);
+            });
+        }
+
+        /* ドラッグ＆ドロップ処理（v4の柔軟性を継承） */
+        function dragOver(e) { e.preventDefault(); e.currentTarget.classList.add('active'); }
+        function dragLeave(e) { e.currentTarget.classList.remove('active'); }
+
+        function dropToZone(e) {
+            e.preventDefault();
+            const zone = e.currentTarget.closest('.drop-zone');
+            zone.classList.remove('active');
+            
+            if (zone.children.length > 0) {
+                // すでにロゴがある場合は、ドラッグ元と場所を入れ替える
+                const existing = zone.children[0];
+                draggedElement.parentNode.appendChild(existing);
+            }
+            zone.appendChild(draggedElement);
+        }
+
+        function dropToBench(e) {
+            e.preventDefault();
+            document.getElementById('bench').appendChild(draggedElement);
+        }
+
+        function openEnvelopes() {
+            document.getElementById('startBtn').disabled = true;
+            document.querySelectorAll('.slot').forEach(s => s.classList.add('reveal'));
+        }
+    </script>
+</body>
+</html>
